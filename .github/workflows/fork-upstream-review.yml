@@ -1,0 +1,34 @@
+name: Fork upstream review
+on:
+  schedule:
+    - cron: '23 9 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: fork-upstream-review
+  cancel-in-progress: false
+jobs:
+  review:
+    if: github.repository == 'turbosasquatch/upbrr'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Prepare upstream review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          git remote add upstream https://github.com/autobrr/upbrr.git
+          git fetch upstream main
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo 'Already contains upstream/main'
+            exit 0
+          fi
+          git push origin upstream/main:refs/heads/review/upstream
+          if ! gh pr list --head review/upstream --base main --json number --jq '.[0].number' | grep -q '[0-9]'; then
+            gh pr create --base main --head review/upstream --title 'Review upstream upbrr changes' --body 'Review upstream changes against the xserve deployment and Whackamole CLI integration. Run the checks and stopped-service backup/dry-run deployment procedure in deploy/xserve/README.md. This workflow never merges or deploys.'
+          fi
