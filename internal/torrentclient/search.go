@@ -1776,10 +1776,10 @@ func torrentV1Files(info metainfo.Info) []metainfo.FileInfo {
 // invalidPieceConstraints reports metadata limits that prevent saving an
 // exported torrent as the reusable torrent file for this source.
 func invalidPieceConstraints(pieceSize int64, pieces int, torrentSize int64, wrongFile bool) bool {
-	if pieces >= 5000 && pieceSize < 4294304 {
+	if pieces >= 5000 && pieceSize < 4*1024*1024 {
 		return true
 	}
-	if pieces >= 8000 && pieceSize < 8488608 {
+	if pieces >= 8000 && pieceSize < 8*1024*1024 {
 		return true
 	}
 	if pieces >= 12000 {
