@@ -1,0 +1,54 @@
+name: Fork upstream review
+on:
+  schedule:
+    - cron: '23 9 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: fork-upstream-review
+  cancel-in-progress: false
+jobs:
+  review:
+    if: github.repository == 'turbosasquatch/upbrr'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: xserve
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Open stable-release review task
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          release=$(gh api repos/autobrr/upbrr/releases/latest --jq .tag_name)
+          if ! printf '%s\n' "$release" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo 'Unexpected stable release tag; inspect upstream manually.' >&2
+            exit 1
+          fi
+          git fetch https://github.com/autobrr/upbrr.git "refs/tags/$release:refs/tags/review-$release"
+          if git merge-base --is-ancestor "refs/tags/review-$release" HEAD; then
+            echo 'Production branch already contains the latest stable release.'
+            exit 0
+          fi
+          title="Review upstream stable release $release"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --search "$title in:title" --json title --jq '.[].title')
+          if printf '%s\n' "$existing" | grep -Fxq "$title"; then
+            echo 'Release already has a review task; retain its reviewed disposition.'
+            exit 0
+          fi
+          cat > "$RUNNER_TEMP/upstream-review.md" <<BODY
+          Upstream stable release: https://github.com/autobrr/upbrr/releases/tag/$release
+
+          - [ ] Create an integration branch from xserve and merge the stable tag, preserving local patches.
+          - [ ] Review release notes, CLI flags, storage migrations, tracker rules and fork-patch overlap; update xserve-image.yml binary/OCI versions and the Whackamole exact-version contract.
+          - [ ] Run backend race/lint/policy checks and all five isolated E2E projects; review the PR.
+          - [ ] Validate Whackamole's binary/storage contract, then publish a digest-pinned candidate.
+          - [ ] Follow deploy/xserve/README.md for idle backup, NORMAL non-submitting readiness, deployment and receipt verification.
+
+          This workflow never merges, publishes, deploys, changes credentials or resumes processing.
+          BODY
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$RUNNER_TEMP/upstream-review.md"

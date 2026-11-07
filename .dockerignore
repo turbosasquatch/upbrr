@@ -17,3 +17,11 @@ documentation
 *.code-workspace
 CLAUDE.md
 AGENTS.md
+.tools
+.private
+.codex
+.env
+.env.*
+config.yaml
+config.yml
+tmp

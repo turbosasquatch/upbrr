@@ -1343,7 +1343,7 @@ func (s *Service) selectValidTorrent(
 			bestDataVerified = dataVerified
 			return
 		}
-		if shouldReplaceBest(pieceSize, bestPiece, constraints) {
+		if shouldReplaceReusable(pieceSize, bestPiece, dataVerified, bestDataVerified, constraints) {
 			bestHash = hash
 			bestPath = path
 			bestData = data
@@ -1842,6 +1842,19 @@ func preferredPieceLabel(pieceSize int64, constraints pieceConstraints) string {
 		return "16MiB"
 	}
 	return ""
+}
+
+// shouldReplaceReusable keeps the configured piece-size class, then prefers
+// independently complete, exact-path client data over provenance-only matches.
+// Every candidate reaches this comparison only after metainfo/hash/layout checks.
+func shouldReplaceReusable(pieceSize, bestPiece int64, verified, bestVerified bool, constraints pieceConstraints) bool {
+	if constraints.preferMax16 && (pieceSize <= max16PieceSize) != (bestPiece <= max16PieceSize) {
+		return pieceSize <= max16PieceSize
+	}
+	if verified != bestVerified {
+		return verified
+	}
+	return shouldReplaceBest(pieceSize, bestPiece, constraints)
 }
 
 func shouldReplaceBest(pieceSize int64, bestPiece int64, constraints pieceConstraints) bool {

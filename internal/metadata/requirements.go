@@ -16,6 +16,9 @@ import (
 // precedence. Instructions must belong to that generation.
 // Unknown fields remain unsatisfied; this does not authorize tracker rules.
 func PreparedRequirementsSatisfied(set api.MetadataRequirementSet, release api.PreparedRelease, instructions api.ReleaseFactInstructions) bool {
+	if set.InspectProgrammeTracks && !release.Media.TrackCoverageComplete {
+		return false
+	}
 	meta := preparationstate.State{
 		Release:              api.ReleaseInfo{Title: release.Naming.Title, Year: release.Naming.Year},
 		SeasonInt:            release.Episode.Season,
