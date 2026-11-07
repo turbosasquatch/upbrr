@@ -1372,8 +1372,8 @@
     "sha256": "c0de5aa1e939fe09967165e368607ce3adb9fbadced810292e52af551f3678d7"
   },
   "internal/trackers/impl/unit3d/sites/dp/profile.go:Profile": {
-    "reason": "Enables the shared explicit single-special predicate using finalized season, episode and source-membership facts. Existing provider selectors, manual naming and metadata precedence, site callbacks, and independent eligibility checks remain unchanged.",
-    "sha256": "af864e358546cb8697c93010987cacedcec928b1f171d269aea06baa9291e042"
+    "reason": "DP requests measured tracks for every programme resource to satisfy its existing strict language assessment. The previous strict TMDB requirement, prepared-source/generation provider binding, manual fact and naming precedence, questionnaire, and validation rules remain unchanged. DP-only and IHD-to-DP collection regressions establish whole-pack evidence without selecting LST or another tracker.",
+    "sha256": "6e9451456976ae43af18621aec550b618c5031fab87320b5de426d5feca568c1"
   },
   "internal/trackers/impl/unit3d/sites/dvl/rules.go:ValidationPolicy": {
     "reason": "Binds checkContent, which preserves manual genres through ValidationRuleSubject and RuleGenres; TMDB keywords remain current-source policy evidence.",

@@ -31,7 +31,7 @@ func (a *yusProgrammeAnalyzer) Analyze(_ context.Context, target string) (string
 	return "General\nComplete name : " + target, []byte(a.reports[target]), nil
 }
 
-func TestSelectedYUSCollectsItsOwnProgrammeEvidence(t *testing.T) {
+func TestSelectedProgrammeDemandsCollectOwnEvidence(t *testing.T) {
 	t.Parallel()
 	registry, err := impl.NewRegistry()
 	if err != nil {
@@ -47,6 +47,8 @@ func TestSelectedYUSCollectsItsOwnProgrammeEvidence(t *testing.T) {
 		complete      bool
 		namingBlocked bool
 	}{
+		{"DP-only six-member season", []api.TrackerID{"DP"}, 6, alternateReport, true, false},
+		{"IHD and DP without LST", []api.TrackerID{"IHD", "DP"}, 6, alternateReport, true, false},
 		{"YUS-only seven-member season", []api.TrackerID{"YUS"}, 7, alternateReport, true, false},
 		{"IHD-only retains primary inspection", []api.TrackerID{"IHD"}, 7, alternateReport, false, true},
 		{"IHD and YUS without LST", []api.TrackerID{"IHD", "YUS"}, 7, alternateReport, true, false},

@@ -46,12 +46,12 @@ jobs:
           push: true
           tags: ghcr.io/turbosasquatch/upbrr:sha-${{ github.sha }}
           build-args: |
-            VERSION=0.4.1-xserve.2
+            VERSION=0.4.1-xserve.3
             BUILD_ID=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/turbosasquatch/upbrr
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=0.4.1-xserve.2
+            org.opencontainers.image.version=0.4.1-xserve.3
           cache-from: type=gha,scope=xserve-image
           cache-to: type=gha,scope=xserve-image,mode=min,ignore-error=true
       - name: Record deployment candidate
