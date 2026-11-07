@@ -1,0 +1,61 @@
+name: xserve image
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: xserve-image
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'turbosasquatch/upbrr' && github.ref == 'refs/heads/xserve'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Require checks and all-project E2E for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          for workflow in checks.yml e2e.yml; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$GITHUB_SHA&per_page=100" \
+              --jq '[.workflow_runs[] | select(.head_sha == env.GITHUB_SHA and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success")] | length > 0' \
+              | grep -qx true
+          done
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish immutable commit image
+        id: image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/turbosasquatch/upbrr:sha-${{ github.sha }}
+          build-args: |
+            VERSION=0.4.1-xserve.1
+            BUILD_ID=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/turbosasquatch/upbrr
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=0.4.1-xserve.1
+          cache-from: type=gha,scope=xserve-image
+          cache-to: type=gha,scope=xserve-image,mode=min,ignore-error=true
+      - name: Record deployment candidate
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          printf 'Reviewed candidate: `ghcr.io/turbosasquatch/upbrr:sha-%s@%s`\n\nPublication does not deploy or resume processing.\n' "$GITHUB_SHA" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"

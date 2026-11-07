@@ -1584,8 +1584,8 @@
     "sha256": "280086d2412e28ae814734e5593072cdfb937ac57ee6e0baecb7c6ade728b299"
   },
   "internal/trackers/impl/unit3d/sites/yus/profile.go:Profile": {
-    "reason": "Enables the shared explicit single-special predicate using finalized season, episode and source-membership facts. Existing provider selectors, manual naming and metadata precedence, site callbacks, and independent eligibility checks remain unchanged.",
-    "sha256": "4e219a0a1e28611d102786149dc505b85879d2d818d2296b02222ba008349923"
+    "reason": "YUS requests measured programme tracks through its own metadata demand while preserving the existing strict TMDB requirement. Provider selectors, finalized source/generation binding, manual fact and full-name precedence, and validation rules remain unchanged. Direct YUS collection and IHD-to-YUS recollection regressions cover all programme resources without adding another selected tracker.",
+    "sha256": "964f807512dc6d66b55e65a8a6bc051843018e4961effb6ab17165f15f5c4dea"
   },
   "internal/trackers/impl/unit3d/taxonomy.go:resolveKeywords": {
     "reason": "provider-only identity, descriptive, transport, media, policy, or episode evidence; no manually-correctable field selector observed",

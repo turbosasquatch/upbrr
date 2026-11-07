@@ -334,7 +334,21 @@ func (b workflowUploadPlanBuilder) Build(
 		subject.SubmissionContentIdentity = identity
 	}
 	if len(eligible) > 0 && b.torrents != nil && !descriptionInstructions.Options.SkipAutoTorrent {
-		torrent, err := b.torrents.Create(ctx, torrentSubject)
+		torrentCtx := ctx
+		if descriptionInstructions.Client.ForceRecheck == nil || !*descriptionInstructions.Client.ForceRecheck {
+			configFingerprint, fingerprintErr := api.CanonicalWorkflowFingerprint(b.config)
+			if fingerprintErr != nil {
+				return api.UploadPlan{}, nil, fmt.Errorf("workflow upload plan: fingerprint torrent configuration: %w", fingerprintErr)
+			}
+			torrentCtx = torrent.WithValidationScope(ctx, torrent.ValidationScope{
+				WorkflowID:        projections.WorkflowID,
+				Release:           projections.ReleaseRef,
+				SourceIdentity:    subject.SourceIdentity.Digest,
+				Manifest:          subject.SourceManifest,
+				ConfigFingerprint: configFingerprint,
+			})
+		}
+		torrent, err := b.torrents.Create(torrentCtx, torrentSubject)
 		if err != nil {
 			return api.UploadPlan{}, nil, fmt.Errorf("workflow upload plan: prepare torrent: %w", err)
 		}

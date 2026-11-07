@@ -1,6 +1,7 @@
 package yus
 
 import (
+	"github.com/autobrr/upbrr/internal/trackers"
 	"github.com/autobrr/upbrr/internal/trackers/impl/unit3d"
 	"github.com/autobrr/upbrr/pkg/api"
 )
@@ -14,6 +15,15 @@ func Profile() unit3d.Profile {
 		BannedGroups:      BannedGroups(),
 		ReleaseNamePolicy: namePolicy(),
 		ValidationPolicy:  validationPolicy(),
+		// Language naming must inspect the whole programme, not only its primary file.
+		MetadataPolicy: &trackers.TrackerMetadataPolicy{
+			InspectProgrammeTracks: true,
+			Requirements: []trackers.MetadataRequirement{{
+				Scope:       trackers.MetadataScopeAny,
+				AnyOf:       []trackers.MetadataField{trackers.MetadataFieldTMDB},
+				Disposition: api.RuleDispositionStrict,
+			}},
+		},
 		Site: unit3d.SiteProfile{
 			AllowSeasonZeroEpisodes: true,
 			ResolveTypeID:           typeID,

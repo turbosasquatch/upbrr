@@ -35,9 +35,11 @@ import (
 // Service selects or creates torrent artifacts under a configured temporary
 // root. Callers must not mutate its registry concurrently with use.
 type Service struct {
-	logger   api.Logger
-	tmpRoot  string
-	registry *trackers.Registry
+	logger     api.Logger
+	tmpRoot    string
+	registry   *trackers.Registry
+	memo       byteValidationMemo
+	verifyData func(string, api.TorrentSubject) error
 }
 
 // NewService returns a service with legacy built-in PTP policy fallback.
@@ -101,6 +103,13 @@ func (s *Service) Create(ctx context.Context, meta api.TorrentSubject) (api.Torr
 		reuseOnly = false
 	}
 	logger.Debugf("torrent: reuse decision=scan source=%s force_rehash=%t reuse_only=%t", source, forceRehash, reuseOnly)
+	_, scopeKey := validationScope(ctx, meta)
+	if forceRehash {
+		scopeKey = ""
+	}
+	s.memo.activate(scopeKey)
+	verify := func(path string, subject api.TorrentSubject) error { return s.verifyReusableData(ctx, path, subject) }
+
 	emitTorrentProgress(ctx, meta, "running", "Checking reusable torrent")
 
 	// If user already provided a .torrent file, re-use it directly.
@@ -126,7 +135,7 @@ func (s *Service) Create(ctx context.Context, meta api.TorrentSubject) (api.Torr
 	validationCache := make(map[string]error, len(candidates))
 	policy := resolveTrackerPolicy(meta, s.registry)
 	if !forceRehash {
-		if reusable := findReusableTorrent(candidates, policy, meta, validationCache, logger); reusable != "" {
+		if reusable := findReusableTorrent(candidates, policy, meta, validationCache, logger, verify); reusable != "" {
 			return resultFromExistingTorrent(ctx, meta, reusable, "Reusing existing torrent")
 		}
 	}
@@ -138,7 +147,7 @@ func (s *Service) Create(ctx context.Context, meta api.TorrentSubject) (api.Torr
 		meta.Trackers = removeTrackerNames(meta.Trackers, skippedTrackers)
 		rehashedTrackers = normalizedTrackerNames(meta.Trackers)
 	} else if hasExistingTorrentCandidate(candidates) {
-		compatible := reusableTrackers(candidates, meta, validationCache, logger, s.registry)
+		compatible := reusableTrackers(candidates, meta, validationCache, logger, s.registry, verify)
 		for _, tracker := range selectedTrackerNames(meta.Trackers, meta.SkipIfRehashTrackers) {
 			if _, ok := compatible[tracker]; !ok {
 				skippedTrackers = append(skippedTrackers, tracker)
@@ -146,7 +155,7 @@ func (s *Service) Create(ctx context.Context, meta api.TorrentSubject) (api.Torr
 		}
 		meta.Trackers = removeTrackerNames(meta.Trackers, skippedTrackers)
 		policy = resolveTrackerPolicy(meta, s.registry)
-		if reusable := findReusableTorrent(candidates, policy, meta, validationCache, logger); reusable != "" {
+		if reusable := findReusableTorrent(candidates, policy, meta, validationCache, logger, verify); reusable != "" {
 			result, resultErr := resultFromExistingTorrent(ctx, meta, reusable, "Reusing existing torrent")
 			result.SkippedTrackers = skippedTrackers
 			return result, resultErr
@@ -411,6 +420,7 @@ func findReusableTorrent(
 	meta api.TorrentSubject,
 	validationCache map[string]error,
 	logger api.Logger,
+	verify func(string, api.TorrentSubject) error,
 ) string {
 	for _, candidate := range candidates {
 		info, err := os.Stat(candidate)
@@ -422,7 +432,7 @@ func findReusableTorrent(
 		}
 		validationErr, checked := validationCache[candidate]
 		if !checked {
-			validationErr = validateCandidateTorrentContent(candidate, meta, logger)
+			validationErr = validateCandidateTorrentContentWithVerifier(candidate, meta, logger, verify)
 			validationCache[candidate] = validationErr
 		}
 		if validationErr == nil {
@@ -443,12 +453,13 @@ func reusableTrackers(
 	validationCache map[string]error,
 	logger api.Logger,
 	registry *trackers.Registry,
+	verify func(string, api.TorrentSubject) error,
 ) map[string]struct{} {
 	compatible := make(map[string]struct{}, len(meta.Trackers))
 	for _, tracker := range normalizedTrackerNames(meta.Trackers) {
 		trackerMeta := meta
 		trackerMeta.Trackers = []string{tracker}
-		if findReusableTorrent(candidates, resolveTrackerPolicy(trackerMeta, registry), trackerMeta, validationCache, logger) != "" {
+		if findReusableTorrent(candidates, resolveTrackerPolicy(trackerMeta, registry), trackerMeta, validationCache, logger, verify) != "" {
 			compatible[tracker] = struct{}{}
 		}
 	}
@@ -526,6 +537,10 @@ func validateCandidateTorrentPolicy(path string, policy *trackerTorrentPolicy, m
 }
 
 func validateCandidateTorrentContent(path string, meta api.TorrentSubject, logger api.Logger) error {
+	return validateCandidateTorrentContentWithVerifier(path, meta, logger, verifyCandidateTorrentData)
+}
+
+func validateCandidateTorrentContentWithVerifier(path string, meta api.TorrentSubject, logger api.Logger, verify func(string, api.TorrentSubject) error) error {
 	if err := validateTorrentContent(path, meta); err != nil {
 		if logger != nil {
 			logger.Debugf("torrent: reusable candidate rejected path=%s stage=content_layout reason=%s", path, redaction.RedactValue(err.Error(), nil))
@@ -539,7 +554,7 @@ func validateCandidateTorrentContent(path string, meta api.TorrentSubject, logge
 			return nil
 		}
 	}
-	if err := verifyCandidateTorrentData(path, meta); err != nil {
+	if err := verify(path, meta); err != nil {
 		if logger != nil {
 			logger.Debugf("torrent: reusable candidate rejected path=%s stage=piece_hash reason=%s", path, redaction.RedactValue(err.Error(), nil))
 		}
