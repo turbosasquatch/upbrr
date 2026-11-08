@@ -44,7 +44,7 @@ func TestBuildDescriptionKeepsComparisonImagesWhenReplacingScreenshots(t *testin
 	}
 }
 
-func TestBuildScreenshotTagUsesHostedThumbnailAndFullSizeLink(t *testing.T) {
+func TestBuildScreenshotTagEmbedsFullSizeImageAtDisplayWidth(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name  string
@@ -55,9 +55,16 @@ func TestBuildScreenshotTagUsesHostedThumbnailAndFullSizeLink(t *testing.T) {
 			ImgURL: "https://images.example.invalid/thumb.png",
 			RawURL: "https://images.example.invalid/full.png",
 			WebURL: "https://images.example.invalid/page",
-		}, "[url=https://images.example.invalid/page][img=350]https://images.example.invalid/thumb.png[/img][/url]"},
-		{"direct full image", api.ScreenshotImage{ImgURL: "https://images.example.invalid/thumb.png", RawURL: "https://images.example.invalid/full.png"}, "[url=https://images.example.invalid/full.png][img=350]https://images.example.invalid/thumb.png[/img][/url]"},
+		}, "[url=https://images.example.invalid/page][img=350]https://images.example.invalid/full.png[/img][/url]"},
+		{"direct full image", api.ScreenshotImage{ImgURL: "https://images.example.invalid/thumb.png", RawURL: "https://images.example.invalid/full.png"}, "[url=https://images.example.invalid/full.png][img=350]https://images.example.invalid/full.png[/img][/url]"},
 		{"no thumbnail", api.ScreenshotImage{RawURL: "https://images.example.invalid/full.png"}, "[url=https://images.example.invalid/full.png][img=350]https://images.example.invalid/full.png[/img][/url]"},
+		{"thumbnail fallback", api.ScreenshotImage{
+			RawURL: " ",
+			ImgURL: "https://images.example.invalid/thumb.png",
+			WebURL: "https://images.example.invalid/page",
+		}, "[url=https://images.example.invalid/page][img=350]https://images.example.invalid/thumb.png[/img][/url]"},
+		{"web fallback", api.ScreenshotImage{WebURL: "https://images.example.invalid/page"}, "[url=https://images.example.invalid/page][img=350]https://images.example.invalid/page[/img][/url]"},
+		{"empty", api.ScreenshotImage{}, ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := buildScreenshotTag(test.image, 350); got != test.want {
@@ -182,5 +189,102 @@ func TestDVDVOBMediaInfoBlockIncludesEveryDiscOnce(t *testing.T) {
 	}
 	if strings.Index(block, "Disc 1") >= strings.Index(block, "Disc 2") {
 		t.Fatalf("DVD VOB block order = %q", block)
+	}
+}
+
+func TestBuildDescriptionRemovesOnlyEncodesUploaderBannerFromImportedAndTemplateDescriptions(t *testing.T) {
+	t.Parallel()
+	for _, banner := range []string{
+		"[center]OnlyEncodes Uploader - Powered by L4G's Upload Assistant[/center]",
+		"[CENTER]onlyencodes uploader - powered by l4g's upload assistant[/CENTER]",
+		"  [center] OnlyEncodes\tUploader  -  Powered by L4G’s Upload Assistant [/center]  ",
+		"[right]OnlyEncodes Uploader - Powered by L4G's Upload Assistant[/right]",
+		"[align=center]OnlyEncodes Uploader - Powered by L4G's Upload Assistant[/align]",
+		"[align=right]OnlyEncodes Uploader - Powered by L4G's Upload Assistant[/align]",
+		"[center][b]OnlyEncodes Uploader - Powered by L4G's Upload Assistant[/b][/center]",
+		"[center]\r\nOnlyEncodes Uploader - Powered by L4G's Upload Assistant\r\n[/center]",
+	} {
+		for _, source := range []string{"imported", "template"} {
+			t.Run(source+"/"+banner, func(t *testing.T) {
+				image := "[img]https://images.example.invalid/screenshot.png[/img]"
+				content := "Release notes and original encode credits.\n\n" + banner + "\n\n" + image + "\n\nAdditional release details."
+				meta := api.DescriptionSubject{}
+				kept := content
+				if source == "template" {
+					meta.DescriptionTemplate = content
+					kept = ""
+				}
+				got, err := BuildDescription(t.Context(), meta, config.Config{}, config.TrackerConfig{}, api.NopLogger{}, kept, nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(strings.ToLower(got), "onlyencodes uploader") {
+					t.Fatalf("copied banner survived cleanup: %q", got)
+				}
+				for _, preserved := range []string{"Release notes and original encode credits.", image, "Additional release details."} {
+					if !strings.Contains(got, preserved) {
+						t.Fatalf("description content lost: %q", preserved)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestBuildDescriptionPreservesOnlyEncodesProseCreditsAndLiteralBannerExamples(t *testing.T) {
+	t.Parallel()
+	banner := "[center]OnlyEncodes Uploader - Powered by L4G's Upload Assistant[/center]"
+	for _, preserved := range []string{
+		"[center]Encode by OnlyEncodes; thanks to the original release team.[/center]",
+		"This guide describes the OnlyEncodes Uploader - Powered by L4G's Upload Assistant banner.",
+		"[center]OnlyEncodes Uploader - Powered by L4G's Upload Assistant. Additional release credits.[/center]",
+		"The literal example " + banner + " is discussed here.",
+		"[code]\n" + banner + "\n[/code]",
+		"[pre]\n" + banner + "\n[/pre]",
+	} {
+		for _, source := range []string{"imported", "template"} {
+			t.Run(source+"/"+preserved, func(t *testing.T) {
+				meta := api.DescriptionSubject{}
+				kept := preserved
+				if source == "template" {
+					meta.DescriptionTemplate = preserved
+					kept = ""
+				}
+				got, err := BuildDescription(t.Context(), meta, config.Config{}, config.TrackerConfig{}, api.NopLogger{}, kept, nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(got, preserved) {
+					t.Fatalf("legitimate content was rewritten: %q", got)
+				}
+			})
+		}
+	}
+}
+
+func TestBuildDescriptionUsesFullSizeScreenshotsAndPreservesTonemappingNotice(t *testing.T) {
+	t.Parallel()
+	cfg := config.Config{}
+	cfg.Description.TonemappedHeader = "Screenshots are tonemapped."
+	got, err := BuildDescription(t.Context(), api.DescriptionSubject{}, cfg, config.TrackerConfig{}, api.NopLogger{},
+		"Release notes.\n[center]OnlyEncodes Uploader - Powered by L4G's Upload Assistant[/center]", nil,
+		[]api.ScreenshotImage{{
+			ImgURL:      "https://images.example.invalid/thumbnail.png",
+			RawURL:      "https://images.example.invalid/full.png",
+			WebURL:      "https://images.example.invalid/page",
+			Tonemapping: api.ScreenshotTonemapped,
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "[url=https://images.example.invalid/page][img=350]https://images.example.invalid/full.png[/img][/url]"
+	if !strings.Contains(got, expected) || strings.Contains(got, "thumbnail.png") {
+		t.Fatalf("full-size embed was lost: %q", got)
+	}
+	if !strings.Contains(got, "Screenshots are tonemapped.") || !strings.Contains(got, "Release notes.") {
+		t.Fatalf("description provenance or content lost: %q", got)
+	}
+	if strings.Contains(got, "OnlyEncodes Uploader") {
+		t.Fatal("copied uploader banner survived")
 	}
 }

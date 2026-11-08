@@ -557,7 +557,7 @@ func reusableDescriptionPrivateMedia(t *testing.T, root, prefix string) workflow
 }
 
 func TestWorkflowDescriptionReuseRefreshesLegacyRendererAndKeepsFinalEdits(t *testing.T) {
-	for _, renderer := range []string{"", "description-renderer-v1", "description-renderer-v2"} {
+	for _, renderer := range []string{"", "description-renderer-v1", "description-renderer-v2", "description-renderer-v3"} {
 		for _, mode := range []string{"generated", "mixed", "final"} {
 			t.Run(renderer+"/"+mode, func(t *testing.T) {
 				f := newWorkflowDescriptionReuseFixture(t)
@@ -567,6 +567,13 @@ func TestWorkflowDescriptionReuseRefreshesLegacyRendererAndKeepsFinalEdits(t *te
 					f.snapshot.Descriptions[i].TrackerIDs = []api.TrackerID{name}
 					f.snapshot.Descriptions[i].GroupKey = "unit3d|" + strings.ToLower(string(name))
 					f.snapshot.TrackerResults[i].TrackerID = name
+				}
+				const copiedBanner = "[center]OnlyEncodes Uploader - Powered by L4G's Upload Assistant[/center]"
+				if renderer == "description-renderer-v3" {
+					f.resolver.subject.DescriptionTemplate += "\n" + copiedBanner
+					for index := range f.snapshot.Descriptions {
+						f.snapshot.Descriptions[index].Source += "\n" + copiedBanner
+					}
 				}
 				f.instructions.Overrides = nil
 				if mode != "generated" {
@@ -594,27 +601,57 @@ func TestWorkflowDescriptionReuseRefreshesLegacyRendererAndKeepsFinalEdits(t *te
 				}
 				// Older output must rebuild without discarding final edits.
 				f.repository.value.RendererVersion = renderer
+				retained, marshalErr := json.Marshal(f.repository.value)
+				if marshalErr != nil {
+					t.Fatal(marshalErr)
+				}
 				f.resolver.subject = reusableDescriptionSubjectForFixture(f.currentRelease, 2)
+				if renderer == "description-renderer-v3" {
+					f.resolver.subject.DescriptionTemplate += "\n" + copiedBanner
+				}
 				f.resolver.useInputGroups = true
 				f.builder.trackers = trackers.NewServiceWithRegistry(f.builder.config, api.NopLogger{}, nil, trackerimpl.MustNewRegistry())
 				current := f.instructions
 				current.Overrides = nil
-				got, restored, err := f.builder.RestoreCompatibleDescriptions(t.Context(), f.currentRelease, f.projections, f.currentMedia, f.currentPrivate, current)
+				got, restored, err := f.builder.RestoreCompatibleDescriptions(
+					t.Context(),
+					f.currentRelease,
+					f.projections,
+					f.currentMedia,
+					f.currentPrivate,
+					current,
+				)
 				if err != nil || got.Status != api.StageStatusCompleted || !reflect.DeepEqual(restored.Overrides, f.instructions.Overrides) {
 					t.Fatalf("refresh=%+v instructions=%+v err=%v", got, restored, err)
 				}
+				unchanged, marshalErr := json.Marshal(f.repository.value)
+				if marshalErr != nil || string(unchanged) != string(retained) {
+					t.Fatal("renderer refresh changed retained historical description")
+				}
 				for _, output := range got.Descriptions {
+					if renderer == "description-renderer-v3" && strings.Contains(output.Source, "OnlyEncodes Uploader") {
+						t.Fatalf("legacy cached banner survived fresh rendering: %+v", output)
+					}
 					for _, tracker := range output.TrackerIDs {
 						final := mode == "final" || mode == "mixed" && tracker == "AITHER"
 						if final && output.Source != "Final "+string(tracker)+" text" {
 							t.Fatalf("final edit changed: %+v", output)
 						}
-						if !final && (!strings.Contains(output.Source, "Template v1") || strings.Contains(output.Source, "saved beta source") || strings.Contains(output.Source, "saved alpha source")) {
+						if !final &&
+							(!strings.Contains(output.Source, "Template v1") || strings.Contains(output.Source, "saved beta source") || strings.Contains(output.Source, "saved alpha source")) {
 							t.Fatalf("generated text not refreshed: %+v", output)
 						}
 					}
 				}
-				record, err := f.builder.PrepareReusableDescriptions(t.Context(), f.currentRelease, f.projections, f.currentMedia, f.currentPrivate, restored, got)
+				record, err := f.builder.PrepareReusableDescriptions(
+					t.Context(),
+					f.currentRelease,
+					f.projections,
+					f.currentMedia,
+					f.currentPrivate,
+					restored,
+					got,
+				)
 				if err != nil || record == nil || record.Description.RendererVersion == "" {
 					t.Fatalf("refreshed record=%+v err=%v", record, err)
 				}
@@ -693,7 +730,12 @@ func TestWorkflowDescriptionReusePreservesEditsWhenUnknownImageDigestIsRecorded(
 			}
 			if !reflect.DeepEqual(restored.Descriptions, fixture.snapshot.Descriptions) ||
 				!reflect.DeepEqual(instructions.Overrides, fixture.instructions.Overrides) || fixture.service.builds != 0 {
-				t.Fatalf("unchanged image bytes lost saved edits: descriptions=%+v overrides=%+v builds=%d", restored.Descriptions, instructions.Overrides, fixture.service.builds)
+				t.Fatalf(
+					"unchanged image bytes lost saved edits: descriptions=%+v overrides=%+v builds=%d",
+					restored.Descriptions,
+					instructions.Overrides,
+					fixture.service.builds,
+				)
 			}
 		})
 	}
@@ -793,7 +835,12 @@ func TestWorkflowDescriptionReusePreservesEditsAfterFormatReinspection(t *testin
 	}
 	if !reflect.DeepEqual(restored.Descriptions, fixture.snapshot.Descriptions) ||
 		!reflect.DeepEqual(instructions.Overrides, fixture.instructions.Overrides) || fixture.service.builds != 0 {
-		t.Fatalf("format reinspection lost saved edits: descriptions=%+v overrides=%+v builds=%d", restored.Descriptions, instructions.Overrides, fixture.service.builds)
+		t.Fatalf(
+			"format reinspection lost saved edits: descriptions=%+v overrides=%+v builds=%d",
+			restored.Descriptions,
+			instructions.Overrides,
+			fixture.service.builds,
+		)
 	}
 }
 

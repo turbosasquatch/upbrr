@@ -32,6 +32,18 @@ var bbcodeImageTag = regexp.MustCompile(`(?is)\[img(?:=[^\]]*)?\](.*?)\[/img\]`)
 var unit3DBotSignatureTag = regexp.MustCompile(
 	`(?is)(?:\[(?:center|right|align=right)\]\s*(?:\[img=\d+\]https://blutopia\.xyz/favicon\.ico\[/img\]\s*)?\[b\]?Uploaded\s+Using\s+\[url=https://github\.com/HDInnovations/UNIT3D\]UNIT3D\[/url\]\s+Auto\s+Uploader\[/b\]?(?:\s*\[img=\d+\]https://blutopia\.xyz/favicon\.ico\[/img\])?\s*\[/(?:center|right|align)\])|(?:\[center\]\s*\[url=https://github\.com/z-ink/uploadrr\]\[img=\d+\]https://i\.ibb\.co/2NVWb0c/uploadrr\.webp\[/img\]\[/url\]\s*\[/center\])|(?:\[center\]\s*\[url=https://github\.com/edge20200/Only-Uploader\]Powered\s+by\s+Only-Uploader\[/url\]\s*\[/center\])|(?:\[center\]\s*\[url=/torrents\?perPage=\d+&name=[^\]]*\]\s*\[/url\]\s*\[/center\])|(?:\[center\]\s*(?:\[b\]\s*(?:\[size=\d+\])?brush(?:\[/size\])?\s*\[/b\]\s*)?This is an internal release which was first released exclusively on Aither\.\s*Cheers to all the Aither(?:\s+users)?\s*\[/center\])|(?:\[(?:center|right|align=right)\]\s*(?:\[url=[^\]]+\]\s*)?(?:\[size=[^\]]+\]\s*)?(?:Created by(?:\s+[^[]*?)?\s*Upload Assistant(?:\s+v?\d+(?:\.\d+)*)?|Shared\s+with\s+Upload-Assistant\s+v\d+(?:\.\d+)*\s+\(fork\))(?:\s*\[/size\])?(?:\s*\[/url\])?\s*\[/(?:center|right|align)\])`,
 )
+
+// Match the complete known banner, not mentions of the uploader in prose or
+// release credits. Keep wrapper pairs exact and limit removal to its own line.
+const onlyEncodesUploaderText = `OnlyEncodes\s+Uploader\s*-\s*Powered\s+by\s+L4G['’]s\s+Upload\s+Assistant`
+const onlyEncodesUploaderBody = `(?:` + onlyEncodesUploaderText + `|\[b\]\s*` + onlyEncodesUploaderText + `\s*\[/b\])`
+
+var unit3DOnlyEncodesBannerTag = regexp.MustCompile(
+	`(?im)^[\t ]*(?:\[center\]\s*` + onlyEncodesUploaderBody + `\s*\[/center\]|` +
+		`\[right\]\s*` + onlyEncodesUploaderBody + `\s*\[/right\]|` +
+		`\[align=(?:center|right)\]\s*` + onlyEncodesUploaderBody + `\s*\[/align\])[\t ]*\r?$`,
+)
+
 var unit3DEmptyCenterTag = regexp.MustCompile(`(?is)\[center\]\s*\[/center\]`)
 var unit3DAlignBlockTag = regexp.MustCompile(`(?is)\[align=(center|left|right)\](.*?)\[/align\]`)
 var unit3DWrapperBlockTag = regexp.MustCompile(`(?is)\[(center|align=(?:center|left|right))\](.*?)\[/(center|align)\]`)
@@ -380,9 +392,9 @@ func countBBCodeImages(value string) int {
 }
 
 func pickScreenshotURL(image api.ScreenshotImage) string {
-	url := strings.TrimSpace(image.ImgURL)
+	url := strings.TrimSpace(image.RawURL)
 	if url == "" {
-		url = strings.TrimSpace(image.RawURL)
+		url = strings.TrimSpace(image.ImgURL)
 	}
 	if url == "" {
 		url = strings.TrimSpace(image.WebURL)
@@ -396,6 +408,9 @@ func stripUnit3DSignature(value string) string {
 		return ""
 	}
 	return strings.TrimSpace(comparison.MapOutsideBlocks(trimmed, func(fragment string) string {
+		fragment = description.MapOutsideLiteralBlocks(fragment, func(value string) string {
+			return unit3DOnlyEncodesBannerTag.ReplaceAllString(value, "")
+		})
 		fragment = unit3DBotSignatureTag.ReplaceAllString(fragment, "")
 		fragment = unit3DEmptyCenterTag.ReplaceAllString(fragment, "")
 		return unit3DUASignatureTag.ReplaceAllString(fragment, "")
