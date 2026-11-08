@@ -129,6 +129,7 @@ type cliOptions struct {
 	QbitTag                    string
 	QbitCategory               string
 	ForceRecheck               bool
+	RefreshMetadata            bool
 	Foreign                    bool
 	Opera                      bool
 	Asian                      bool
@@ -307,6 +308,7 @@ func bindUploadFlags(fs *pflag.FlagSet, opts *cliOptions) {
 	fs.StringVar(&opts.QbitCategory, "qbc", "", "Override qBittorrent category")
 	fs.BoolVar(&opts.ForceRecheck, "force-recheck", false, "Force recheck matched qBittorrent torrents before validation")
 	fs.BoolVar(&opts.ForceRecheck, "frc", false, "Force recheck matched qBittorrent torrents before validation")
+	fs.BoolVar(&opts.RefreshMetadata, "refresh-metadata", false, "Refresh external metadata for initial preparation; preserve explicit ID pins")
 	fs.BoolVar(&opts.Foreign, "foreign", false, "Mark TIK release as foreign")
 	fs.BoolVar(&opts.Opera, "opera", false, "Mark TIK release as opera or musical")
 	fs.BoolVar(&opts.Asian, "asian", false, "Mark TIK release as asian")
@@ -950,7 +952,7 @@ func cliHelpSections(name string) []helpSection {
 			title: "Input Corrections",
 			names: []string{"source-lookup", "track-languages", "track-audio-origin", "reset-input", "confirm-input", "tracker-input"},
 		},
-		{title: "Metadata IDs", names: []string{"tmdb", "imdb", "mal", "tvdb", "tvmaze"}},
+		{title: "Metadata IDs", names: []string{"tmdb", "imdb", "mal", "tvdb", "tvmaze", "refresh-metadata"}},
 		{title: "Tracker Overrides", names: []string{
 			"skip-dupe-check", "skip-dupe-asking", "double-dupe-check", "foreign", "opera", "asian", "disctype",
 			"commentary", "personalrelease", "stream", "webdv", "not-anime", "anime", "anon", "draft", "modq", "channel",

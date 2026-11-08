@@ -13,6 +13,7 @@ import (
 	"io"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1176,6 +1177,7 @@ func TestCLIWorkflowUnattendedPlaylistActionDoesNotPrompt(t *testing.T) {
 			Options:    api.UploadOptions{InteractionMode: api.InteractionModeUnattended},
 		},
 		api.PreparationIntentUpload,
+		false,
 		bufio.NewReader(strings.NewReader("1\n")),
 		config.Config{},
 		cliIO{},
@@ -1201,6 +1203,7 @@ func TestCLIWorkflowLargestPlaylistUsesTypedFactReplacement(t *testing.T) {
 			Options:    api.UploadOptions{InteractionMode: api.InteractionModeUnattended},
 		},
 		api.PreparationIntentUpload,
+		false,
 		nil,
 		config.Config{Metadata: config.MetadataConfig{UseLargestPlaylist: true}},
 		cliIO{},
@@ -1275,6 +1278,7 @@ func TestCLIWorkflowSessionsUseDistinctDurableIdempotencyKeys(t *testing.T) {
 		firstCore,
 		request,
 		api.PreparationIntentUpload,
+		false,
 		nil,
 		config.Config{},
 		cliIO{},
@@ -1288,6 +1292,7 @@ func TestCLIWorkflowSessionsUseDistinctDurableIdempotencyKeys(t *testing.T) {
 		secondCore,
 		request,
 		api.PreparationIntentUpload,
+		false,
 		nil,
 		config.Config{},
 		cliIO{},
@@ -1958,7 +1963,7 @@ func TestCLIInputOnlyDoesNotStartCompositeUpload(t *testing.T) {
 }
 
 func TestCLIInteractiveCorrectionTransfersActiveInputClaim(t *testing.T) {
-	opts, visited, _, err := parseCLIOptions([]string{"example.mkv"})
+	opts, visited, _, err := parseCLIOptions([]string{"--refresh-metadata", "example.mkv"})
 	if err != nil {
 		t.Fatalf("parse options: %v", err)
 	}
@@ -2004,7 +2009,7 @@ func TestCLIInteractiveCorrectionTransfersActiveInputClaim(t *testing.T) {
 	err = runCLIWorkflowInteractive(
 		t.Context(),
 		coreSvc,
-		[]string{"example.mkv"},
+		[]string{"--refresh-metadata", "example.mkv"},
 		opts,
 		visited,
 		"example.mkv",
@@ -2019,6 +2024,15 @@ func TestCLIInteractiveCorrectionTransfersActiveInputClaim(t *testing.T) {
 	}
 	if len(coreSvc.releaseRequests) != 1 || coreSvc.releaseRequests[0].ExpectedRevision != 7 {
 		t.Fatalf("active input release requests = %#v", coreSvc.releaseRequests)
+	}
+	refreshes := 0
+	for _, continuation := range coreSvc.continuations {
+		if input := continuation.Intent.Preparation; input != nil && input.ExternalFreshness.RequiresRefresh() {
+			refreshes++
+		}
+	}
+	if refreshes != 1 {
+		t.Fatalf("interactive correction refreshed providers %d times, want one initial refresh", refreshes)
 	}
 }
 
@@ -2430,5 +2444,55 @@ func TestCLIInteractiveCommentaryCorrectionUsesExistingLoop(t *testing.T) {
 	}
 	if corrections != 1 || !strings.Contains(output.String(), "Commentary: true") || !strings.Contains(output.String(), "Commentary: false") {
 		t.Fatalf("commentary correction loop = %d corrections, output %q", corrections, output.String())
+	}
+}
+
+func TestCLIRefreshMetadataOnlyInitialPreparation(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			args := []string{"--tmdb", "765432", "--imdb", "1234567", "example.mkv"}
+			if enabled {
+				args = append([]string{"--refresh-metadata"}, args...)
+			}
+			opts, visited, paths, err := parseCLIOptions(args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, err := buildCLIRequest(opts, visited, paths, 4)
+			if err != nil {
+				t.Fatal(err)
+			}
+			coreSvc := &cliWorkflowCoreFake{}
+			_, err = newCLIWorkflowSession(t.Context(), coreSvc, request, api.PreparationIntentPreview,
+				opts.RefreshMetadata, nil, config.Config{Metadata: config.MetadataConfig{UseLargestPlaylist: true}}, cliIO{}, api.NopLogger{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var inputs []api.PrepareInput
+			for _, command := range coreSvc.commands {
+				if prepare, ok := command.(releaseworkflow.PrepareReleaseCommand); ok {
+					inputs = append(inputs, prepare.Input)
+				}
+			}
+			if len(inputs) != 2 {
+				t.Fatalf("preparations=%d, want initial and playlist continuation", len(inputs))
+			}
+			want := api.ExternalFreshnessReuse
+			if enabled {
+				want = api.ExternalFreshnessRefresh
+			}
+			if inputs[0].ExternalFreshness != want || inputs[1].ExternalFreshness != api.ExternalFreshnessReuse {
+				t.Fatalf("freshness: initial=%q playlist=%q", inputs[0].ExternalFreshness, inputs[1].ExternalFreshness)
+			}
+			for _, input := range inputs {
+				if input.Controls.ForceRecheck != nil || input.Force || opts.Rehash || opts.DeleteTmp {
+					t.Fatal("metadata refresh changed unrelated source or torrent controls")
+				}
+				if input.Instructions.Identity.TMDBID == nil || *input.Instructions.Identity.TMDBID != 765432 ||
+					input.Instructions.Identity.IMDBID == nil || *input.Instructions.Identity.IMDBID != 1234567 {
+					t.Fatal("metadata refresh changed explicit provider pins")
+				}
+			}
+		})
 	}
 }

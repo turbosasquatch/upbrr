@@ -261,6 +261,11 @@ func (s *cliWorkflowSession) continueUntilStable(
 		if err := s.executeContinuation(ctx, request); err != nil {
 			return err
 		}
+		if s.current.Release != nil && request.Intent.Preparation != nil {
+			input := *request.Intent.Preparation
+			input.ExternalFreshness = api.ExternalFreshnessReuse
+			request.Intent.Preparation = &input
+		}
 		if slices.ContainsFunc(s.current.Workflow.RequiredActions, func(action api.RequiredAction) bool {
 			return action.Status == api.RequiredActionStatusPending
 		}) {
@@ -409,6 +414,7 @@ func newCLIWorkflowSession(
 	coreSvc cliReleaseWorkflowCore,
 	request api.Request,
 	intent api.PreparationIntent,
+	refreshMetadata bool,
 	reader *bufio.Reader,
 	cfg config.Config,
 	streams cliIO,
@@ -418,6 +424,9 @@ func newCLIWorkflowSession(
 	input, err := api.MapPreparationRequest(request, intent)
 	if err != nil {
 		return nil, fmt.Errorf("upbrr: map workflow preparation: %w", err)
+	}
+	if refreshMetadata {
+		input.ExternalFreshness = api.ExternalFreshnessRefresh
 	}
 	session := &cliWorkflowSession{
 		core:           coreSvc,
@@ -448,7 +457,10 @@ func newCLIWorkflowSession(
 	}); err != nil {
 		return nil, err
 	}
-	if err := session.resolvePlaylistAction(ctx, input, session.intent.interaction, reader, cfg); err != nil {
+	// Refresh belongs to the initial preparation, not later user decisions.
+	playlistInput := input
+	playlistInput.ExternalFreshness = api.ExternalFreshnessReuse
+	if err := session.resolvePlaylistAction(ctx, playlistInput, session.intent.interaction, reader, cfg); err != nil {
 		return nil, err
 	}
 	if session.current.Release == nil {
@@ -639,7 +651,9 @@ func runCLIWorkflowInteractive(
 			return err
 		}
 		request.PlaylistInstruction = cloneCLIPlaylistInstruction(playlist)
-		replacement, err := newCLIWorkflowSession(ctx, coreSvc, request, api.PreparationIntentPreview, reader, cfg, streams, logger)
+		replacement, err := newCLIWorkflowSession(
+			ctx, coreSvc, request, api.PreparationIntentPreview, opts.RefreshMetadata && session == nil, reader, cfg, streams, logger,
+		)
 		if err != nil {
 			return err
 		}
@@ -1598,6 +1612,7 @@ func runCLIWorkflowUploadOnly(
 	coreSvc cliReleaseWorkflowCore,
 	batch cliPreparationBatch,
 	debug bool,
+	refreshMetadata bool,
 	queueMode bool,
 	screenshotCountIsDefault bool,
 	cfg config.Config,
@@ -1614,7 +1629,7 @@ func runCLIWorkflowUploadOnly(
 		request.SourcePath = item.originalPath
 		request.ExternalIDOverrides = item.externalIDs
 		request.PlaylistInstruction = item.playlistInstruction
-		session, err := newCLIWorkflowSession(itemCtx, coreSvc, request, api.PreparationIntentUpload, reader, cfg, streams, logger)
+		session, err := newCLIWorkflowSession(itemCtx, coreSvc, request, api.PreparationIntentUpload, refreshMetadata, reader, cfg, streams, logger)
 		if err != nil {
 			return err
 		}
@@ -1644,7 +1659,7 @@ func runCLIWorkflowSiteCheck(
 	request.PlaylistInstruction = item.playlistInstruction
 	streams = streams.normalized()
 	reader := bufio.NewReader(streams.in)
-	session, err := newCLIWorkflowSession(ctx, coreSvc, request, api.PreparationIntentDryRun, reader, cfg, streams, logger)
+	session, err := newCLIWorkflowSession(ctx, coreSvc, request, api.PreparationIntentDryRun, opts.RefreshMetadata, reader, cfg, streams, logger)
 	if err != nil {
 		return err
 	}

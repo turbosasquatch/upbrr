@@ -243,6 +243,10 @@ func parseTMDBValue(value string) (string, int) {
 	category := ""
 	lower := strings.ToLower(trimmed)
 	parts := strings.Split(strings.Trim(lower, "/"), "/")
+	// An IMDb token in a TMDB tag must not become a numeric TMDB identity.
+	if strings.HasPrefix(parts[len(parts)-1], "tt") {
+		return "", 0
+	}
 	if len(parts) >= 2 {
 		candidate := parts[len(parts)-2]
 		if candidate == "movie" || candidate == "tv" {

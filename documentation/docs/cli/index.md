@@ -280,7 +280,9 @@ Strict `--unattended` reports the missing facts and exits without prompting. Int
 
 TMDB also accepts `movie/<id>`, `tv/<id>`, or a URL ending in the ID; a movie/TV hint overrides the category. IMDb accepts numeric IDs or the `tt` prefix. TVDB, TVmaze, and MAL take numeric IDs, not URLs.
 
-During the **Metadata correct?** loop, correcting the same active input reuses provider lookups for unchanged inputs, including lookups that returned no result. A later run can retry those empty results. Completed fetch failures remain retained until the input is removed from **History**. Changing the source, provider ID, or lookup query requests its own result.
+During the **Metadata correct?** loop, correcting the same active input reuses provider lookups for unchanged inputs, including lookups that returned no result. A later run can retry those empty results. Completed fetch failures remain retained until you request a metadata refresh or remove the input from **History**. Changing the source, provider ID, or lookup query requests its own result.
+
+`--refresh-metadata` fetches current external provider metadata during the initial preparation of each input in this invocation. Explicit provider ID pins remain authoritative. Later decisions and continuations reuse the refreshed preparation. This option does not request a torrent-client recheck, regenerate torrents, or delete retained input history.
 
 ### Clear a metadata provider
 

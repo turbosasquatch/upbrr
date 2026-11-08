@@ -182,6 +182,8 @@ Metadata IDs:
       Override TVDB id; empty or 0 clears and skips this provider
   -tvmaze, --tvmaze string
       Override TVmaze id; empty or 0 clears and skips this provider
+  -refresh-metadata, --refresh-metadata
+      Refresh external metadata for initial preparation; preserve explicit ID pins
 
 Tracker Overrides:
   -skip-dupe-check, --skip-dupe-check, -sdc
