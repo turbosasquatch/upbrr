@@ -150,7 +150,7 @@ func TestBuildDiscScreenshotSectionsGroupsPreparedDiscOrder(t *testing.T) {
 		},
 	}
 
-	section := buildDiscScreenshotSections(meta, images, 350, 2)
+	section := buildDiscScreenshotSections(meta, images, 350, 2, buildScreenshotTag)
 	wantOrder := []string{"[b]Disc 1[/b]", "disc-one.png", "[b]Disc 2[/b]", "disc-two.png"}
 	previous := -1
 	for _, value := range wantOrder {
@@ -286,5 +286,104 @@ func TestBuildDescriptionUsesFullSizeScreenshotsAndPreservesTonemappingNotice(t 
 	}
 	if strings.Contains(got, "OnlyEncodes Uploader") {
 		t.Fatal("copied uploader banner survived")
+	}
+}
+
+func TestBuildDescriptionSeparatesMenuThumbnailAndFullScreenshotRoles(t *testing.T) {
+	t.Parallel()
+	menu := api.ScreenshotImage{
+		ImgURL: "https://images.example.invalid/menu-thumb.png",
+		RawURL: "https://images.example.invalid/menu-full.png",
+		WebURL: "https://images.example.invalid/menu-page",
+	}
+	screen := api.ScreenshotImage{
+		ImgURL: "https://images.example.invalid/screen-thumb.png",
+		RawURL: "https://images.example.invalid/screen-full.png",
+		WebURL: "https://images.example.invalid/screen-page",
+	}
+	got, err := BuildDescription(
+		t.Context(),
+		api.DescriptionSubject{},
+		config.Config{},
+		config.TrackerConfig{},
+		api.NopLogger{},
+		"Release notes",
+		[]api.ScreenshotImage{menu},
+		[]api.ScreenshotImage{screen},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"[url=" + menu.WebURL + "][img=350]" + menu.ImgURL + "[/img][/url]", "[url=" + screen.WebURL + "][img=350]" + screen.RawURL + "[/img][/url]"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("wrong image role: missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, "[img=350]"+menu.RawURL) || strings.Contains(got, screen.ImgURL) {
+		t.Fatalf("image roles mixed: %q", got)
+	}
+}
+
+func TestBuildDescriptionRecognizesKeptThumbnailAndRawImageAliases(t *testing.T) {
+	t.Parallel()
+	screen := api.ScreenshotImage{
+		ImgURL: "https://images.example.invalid/thumb.png",
+		RawURL: "https://images.example.invalid/full.png",
+		WebURL: "https://images.example.invalid/page",
+	}
+	for _, existing := range []string{screen.ImgURL, screen.RawURL} {
+		t.Run(existing, func(t *testing.T) {
+			kept := "Caption: [url=" + screen.WebURL + "][img=300]" + existing + "[/img][/url]"
+			got, err := BuildDescription(
+				t.Context(),
+				api.DescriptionSubject{},
+				config.Config{},
+				config.TrackerConfig{},
+				api.NopLogger{},
+				kept,
+				nil,
+				[]api.ScreenshotImage{screen},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Count(got, kept) != 1 || strings.Contains(got, "[img=350]"+screen.RawURL) {
+				t.Fatalf("kept image alias duplicated or rewritten: %q", got)
+			}
+		})
+	}
+}
+
+func TestBuildDescriptionDedupesMenuImageAliasesButNotProseOrPageLinks(t *testing.T) {
+	t.Parallel()
+	menu := api.ScreenshotImage{
+		ImgURL: "https://images.example.invalid/menu-thumb.png",
+		RawURL: "https://images.example.invalid/menu-full.png",
+		WebURL: "https://images.example.invalid/shared-page",
+	}
+	screen := api.ScreenshotImage{
+		ImgURL: "https://images.example.invalid/screen-thumb.png",
+		RawURL: "https://images.example.invalid/screen-full.png",
+		WebURL: menu.WebURL,
+	}
+	kept := "Reference: [url=" + screen.WebURL + "]page[/url] and " + screen.RawURL
+	got, err := BuildDescription(
+		t.Context(),
+		api.DescriptionSubject{},
+		config.Config{},
+		config.TrackerConfig{},
+		api.NopLogger{},
+		kept,
+		[]api.ScreenshotImage{menu},
+		[]api.ScreenshotImage{screen, {ImgURL: menu.RawURL}, {RawURL: menu.ImgURL}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "[img=350]"+screen.RawURL+"[/img]") {
+		t.Fatalf("prose/page URL suppressed unrelated screenshot: %q", got)
+	}
+	if strings.Count(got, "[img=350]"+menu.ImgURL+"[/img]") != 1 || strings.Contains(got, "[img=350]"+menu.RawURL+"[/img]") {
+		t.Fatalf("menu aliases duplicated as screenshots: %q", got)
 	}
 }

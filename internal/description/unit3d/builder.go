@@ -170,6 +170,7 @@ func ComposeDescription(
 			menuImages,
 			appConfig.Description.ThumbnailSize,
 			parseScreensPerRow(appConfig.Description.ScreensPerRow),
+			buildMenuTag,
 		)
 		if menuSection != "" {
 			appendUniquePart(menuSection, "menu_images")
@@ -195,6 +196,7 @@ func ComposeDescription(
 		filteredScreenshots,
 		appConfig.Description.ThumbnailSize,
 		parseScreensPerRow(appConfig.Description.ScreensPerRow),
+		buildScreenshotTag,
 	)
 	// Selected images already present in kept text still count toward the notice.
 	noticeScreenshots := filterScreenshotDuplicates(screenshots, "", menuImages)
@@ -228,9 +230,15 @@ func ComposeDescription(
 	return description, nil
 }
 
-func buildDiscScreenshotSections(meta api.DescriptionSubject, images []api.ScreenshotImage, thumbnailSize int, screensPerRow int) string {
+func buildDiscScreenshotSections(
+	meta api.DescriptionSubject,
+	images []api.ScreenshotImage,
+	thumbnailSize int,
+	screensPerRow int,
+	render func(api.ScreenshotImage, int) string,
+) string {
 	if len(meta.Disc.Items) < 2 {
-		return buildScreenshotSection(images, thumbnailSize, screensPerRow)
+		return buildScreenshotSection(images, thumbnailSize, screensPerRow, render)
 	}
 	parts := make([]string, 0, len(meta.Disc.Items)+1)
 	used := make(map[int]struct{}, len(images))
@@ -243,7 +251,7 @@ func buildDiscScreenshotSections(meta api.DescriptionSubject, images []api.Scree
 			group = append(group, image)
 			used[index] = struct{}{}
 		}
-		if section := buildScreenshotSection(group, thumbnailSize, screensPerRow); section != "" {
+		if section := buildScreenshotSection(group, thumbnailSize, screensPerRow, render); section != "" {
 			parts = append(parts, "[b]"+safeDiscLabel(disc.Name)+"[/b]\n"+section)
 		}
 	}
@@ -253,7 +261,7 @@ func buildDiscScreenshotSections(meta api.DescriptionSubject, images []api.Scree
 			unscoped = append(unscoped, image)
 		}
 	}
-	if section := buildScreenshotSection(unscoped, thumbnailSize, screensPerRow); section != "" {
+	if section := buildScreenshotSection(unscoped, thumbnailSize, screensPerRow, render); section != "" {
 		parts = append(parts, section)
 	}
 	return strings.Join(parts, "\n\n")
@@ -267,7 +275,7 @@ func safeDiscLabel(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
 
-func buildScreenshotSection(images []api.ScreenshotImage, thumbnailSize int, screensPerRow int) string {
+func buildScreenshotSection(images []api.ScreenshotImage, thumbnailSize int, screensPerRow int, render func(api.ScreenshotImage, int) string) string {
 	if thumbnailSize <= 0 {
 		thumbnailSize = 350
 	}
@@ -277,7 +285,7 @@ func buildScreenshotSection(images []api.ScreenshotImage, thumbnailSize int, scr
 	rows := make([]string, 0)
 	rowParts := make([]string, 0, screensPerRow)
 	for _, image := range images {
-		imgTag := buildScreenshotTag(image, thumbnailSize)
+		imgTag := render(image, thumbnailSize)
 		if imgTag == "" {
 			continue
 		}
@@ -297,9 +305,20 @@ func buildScreenshotSection(images []api.ScreenshotImage, thumbnailSize int, scr
 }
 
 func buildScreenshotTag(image api.ScreenshotImage, thumbnailSize int) string {
+	return buildLinkedImageTag(image, thumbnailSize, pickScreenshotURL(image))
+}
+
+func buildMenuTag(image api.ScreenshotImage, thumbnailSize int) string {
+	url := strings.TrimSpace(image.ImgURL)
+	if url == "" {
+		url = pickScreenshotURL(image)
+	}
+	return buildLinkedImageTag(image, thumbnailSize, url)
+}
+
+func buildLinkedImageTag(image api.ScreenshotImage, thumbnailSize int, url string) string {
 	webURL := strings.TrimSpace(image.WebURL)
 	rawURL := strings.TrimSpace(image.RawURL)
-	url := pickScreenshotURL(image)
 	if url == "" {
 		return ""
 	}
@@ -332,10 +351,11 @@ func filterScreenshotDuplicates(images []api.ScreenshotImage, keptDescription st
 	if seen == nil {
 		seen = make(map[string]struct{})
 	}
-	for _, img := range menuImages {
-		u := pickScreenshotURL(img)
-		if u != "" {
-			seen[u] = struct{}{}
+	for _, image := range menuImages {
+		for _, url := range []string{image.ImgURL, image.RawURL} {
+			if url = strings.TrimSpace(url); url != "" {
+				seen[url] = struct{}{}
+			}
 		}
 	}
 	if len(seen) == 0 {
@@ -343,19 +363,19 @@ func filterScreenshotDuplicates(images []api.ScreenshotImage, keptDescription st
 	}
 	filtered := make([]api.ScreenshotImage, 0, len(images))
 	for _, image := range images {
-		url := pickScreenshotURL(image)
-		if url == "" {
+		if pickScreenshotURL(image) == "" {
 			continue
 		}
-		if _, ok := seen[url]; ok {
-			continue
-		}
-		if rawURL := strings.TrimSpace(image.RawURL); rawURL != "" {
-			if _, ok := seen[rawURL]; ok {
-				continue
+		duplicate := false
+		for _, url := range []string{image.ImgURL, image.RawURL} {
+			if _, exists := seen[strings.TrimSpace(url)]; exists && strings.TrimSpace(url) != "" {
+				duplicate = true
+				break
 			}
 		}
-		filtered = append(filtered, image)
+		if !duplicate {
+			filtered = append(filtered, image)
+		}
 	}
 	return filtered
 }

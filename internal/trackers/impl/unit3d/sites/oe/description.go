@@ -130,7 +130,7 @@ func oeAppendMissingScreenshotLinks(description string, screenshots []api.Screen
 			"[url=%s][img=%d]%s[/img][/url]",
 			screenshot.WebURL,
 			thumbnailSize,
-			cmp.Or(strings.TrimSpace(screenshot.ImgURL), strings.TrimSpace(screenshot.RawURL)),
+			cmp.Or(strings.TrimSpace(screenshot.RawURL), strings.TrimSpace(screenshot.ImgURL)),
 		))
 	}
 	return strings.TrimSpace(description) + "\n\n[center]" + strings.Join(links, "") + "[/center]"

@@ -61,7 +61,7 @@ func TestDescriptionUsesOnlyACMMarkupTransforms(t *testing.T) {
 		"[comparison=Source,Encode]https://images.example/source.png https://images.example/encode.png[/comparison]",
 		"https://images.example/source.png",
 		"https://images.example/encode.png",
-		"https://images.example/thumb.png",
+		"[img=350]https://images.example/screen.png[/img]",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("description missing tracker-owned markup %q: %q", want, got)
